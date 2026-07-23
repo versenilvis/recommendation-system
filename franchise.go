@@ -3,6 +3,7 @@ package recommender
 import (
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 func extractRoots(name string) []string {
@@ -111,7 +112,7 @@ func normRoot(s string) string {
 }
 
 func isRootStopword(t string) bool {
-	if len(t) <= 1 {
+	if utf8.RuneCountInString(t) <= 1 {
 		return true
 	}
 	if _, err := strconv.Atoi(t); err == nil {
@@ -121,11 +122,15 @@ func isRootStopword(t string) bool {
 	case "the", "a", "an", "of", "and", "or",
 		"phim", "movie", "film",
 		"phan", "season", "ss", "tap", "part",
+		"ban", "truyen", "nguyen", "tac",
+		"chu", "chú", "co", "cô", "cau", "cậu", "be", "bé", "chang", "chàng", "nang", "nàng",
+		"nhung", "những", "cac", "các", "mot", "một", "su", "sự", "ke", "kẻ", "nguoi", "người",
+		"thuyet", "minh", "long", "tieng", "vietsub",
 		"into", "across", "no", "way", "far", "from", "home",
 		"beyond", "through", "within", "without", "along",
 		"in", "on", "at", "to", "by", "for", "with",
-		"khong", "không", "co", "có", "va", "và", "hoac", "hoặc",
-		"nhung", "nhưng", "cua", "của", "cho", "voi", "với",
+		"khong", "không", "có", "va", "và", "hoac", "hoặc",
+		"nhưng", "cua", "của", "cho", "voi", "với",
 		"tai", "tại", "trong", "ngoai", "ngoài", "tren", "trên",
 		"duoi", "dưới", "den", "đến", "di", "đi", "ve", "về",
 		"nhu", "như", "de", "để", "boi", "bởi", "tu", "từ",
@@ -154,7 +159,7 @@ func isTooGenericRoot(root string) bool {
 		return true
 	}
 	if meaningful == 1 {
-		if len(firstToken) <= 3 {
+		if utf8.RuneCountInString(firstToken) <= 3 {
 			return true
 		}
 		switch firstToken {
