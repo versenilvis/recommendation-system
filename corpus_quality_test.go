@@ -220,23 +220,37 @@ func TestCorpusStrangerThingsTalesNotTrollhunters(t *testing.T) {
 
 func TestCorpusOnePieceLiveActionFranchisePriority(t *testing.T) {
 	pool := corpusPool()
-	// enrich pool with Smallville noise that previously outranked OP peers
-	pool = append(pool, Movie{
-		Slug: "thi-tran-smallville-phan-2", Name: "Thị Trấn Smallville (Phần 2)",
-		OriginName: "Smallville (Season 2)",
-		Genres:     []string{"khoa-hoc", "vien-tuong", "hanh-dong", "phieu-luu", "chinh-kich", "tam-ly", "series"},
-		Country:    "Âu Mỹ",
-	})
+	// Noise that previously outranked OP peers under weak commercial matching.
+	for _, noise := range []Movie{
+		{Slug: "thi-tran-smallville-phan-2", Name: "Thị Trấn Smallville (Phần 2)", OriginName: "Smallville (Season 2)", Genres: []string{"khoa-hoc", "vien-tuong", "hanh-dong", "phieu-luu", "chinh-kich", "tam-ly", "series"}, Country: "Âu Mỹ"},
+		{Slug: "doi-dac-nhiem-shield-phan-2", Name: "Đội Đặc Nhiệm SHIELD (Phần 2)", OriginName: "Agents of S.H.I.E.L.D. (Season 2)", Genres: []string{"hanh-dong", "phieu-luu", "khoa-hoc", "vien-tuong", "series"}, Country: "Âu Mỹ"},
+		{Slug: "hiep-si-xe-den-phan-1", Name: "Hiệp Sĩ Xe Đen (Phần 1)", OriginName: "Knight Rider (Season 1)", Genres: []string{"hanh-dong", "phieu-luu", "khoa-hoc", "series"}, Country: "Âu Mỹ"},
+	} {
+		pool = append(pool, noise)
+	}
 	target := find(pool, "dao-hai-tac-live-action-phan-2")
 	opAnime := find(pool, "dao-hai-tac-5-loi-nguyen-thanh-kiem")
 	small := find(pool, "thi-tran-smallville-phan-4")
+	shield := find(pool, "doi-dac-nhiem-shield-phan-2")
 	opScore := ScoreSimilarContent(target, opAnime)
-	smallScore := ScoreSimilarContent(target, small)
-	if opScore <= smallScore {
-		t.Fatalf("One Piece franchise peer (%f) must outrank Smallville (%f)", opScore, smallScore)
+	for _, noise := range []Movie{small, shield, find(pool, "hiep-si-xe-den-phan-1")} {
+		ns := ScoreSimilarContent(target, noise)
+		if opScore <= ns {
+			t.Fatalf("One Piece peer score %f must beat %s (%f)", opScore, noise.Slug, ns)
+		}
+		if opScore-ns < 3 {
+			t.Fatalf("franchise margin too thin: OP %f vs %s %f (need ≥3)", opScore, noise.Slug, ns)
+		}
 	}
 	res := Recommend(target, without(pool, target.Slug), UserContext{})
-	// franchise peer should appear in similar (not same_series — format differs)
+	if len(res.SimilarContent) == 0 {
+		t.Fatal("empty similar_content")
+	}
+	// First similar row must be a franchise peer (dominates over Smallville/SHIELD/Knight Rider).
+	top := res.SimilarContent[0]
+	if !strings.Contains(top.Slug, "dao-hai-tac") && !strings.Contains(top.Slug, "one-piece") {
+		t.Fatalf("similar[0] must be One Piece franchise, got %s (rail=%v)", top.Slug, slugs(res.SimilarContent))
+	}
 	if !hasSlug(res.SimilarContent, opAnime.Slug) && !hasAnySlugPrefix(res.SimilarContent, "dao-hai-tac", "one-piece") {
 		t.Fatalf("similar_content missing One Piece franchise peers, got %v", slugs(res.SimilarContent))
 	}
