@@ -109,6 +109,8 @@ func genreIntersectionCount(a, b []string) int {
 }
 
 // IsSensitiveContent flags adult / softcore titles by genre slug or name/slug keywords.
+// Title/slug signals are primary. Description text only matches strongly sexual phrases —
+// bare "người lớn" is common for mature animated shows (e.g. Invincible) and must not flag.
 func IsSensitiveContent(m Movie) bool {
 	for g := range genreSet(m.Genres) {
 		switch g {
@@ -116,19 +118,29 @@ func IsSensitiveContent(m Movie) bool {
 			return true
 		}
 	}
-	blob := strings.ToLower(removeDiacritics(
-		m.Name + " " + m.OriginName + " " + m.Slug + " " + m.Content,
-	))
-	// keep keywords ASCII-folded so "Cuồng Dâm" matches "cuong dam"
+	// Name + slug only for short sexual keywords (avoid description false positives).
+	titleBlob := strings.ToLower(removeDiacritics(m.Name + " " + m.OriginName + " " + m.Slug))
 	for _, kw := range []string{
 		"sex", "xxx", "18+", "phim-18", "phim 18",
 		"cuong dam", "cuong-dam", "nghien sex", "nghien-sex",
-		"erotic", "porn", "nguoi lon", "nguoi-lon",
+		"erotic", "porn", "phim nguoi lon", "phim-nguoi-lon",
 		"tinh duc", "tinh-duc", "dam duc", "loan luan",
-		"khiêu dâm", "khieu dam", "softcore", "hardcore",
+		"khieu dam", "softcore", "hardcore",
 	} {
-		if strings.Contains(blob, removeDiacritics(kw)) {
+		if strings.Contains(titleBlob, removeDiacritics(kw)) {
 			return true
+		}
+	}
+	// Description: only explicit sexual marketing phrases, not "dành cho người lớn".
+	if m.Content != "" {
+		desc := strings.ToLower(removeDiacritics(m.Content))
+		for _, kw := range []string{
+			"phim sex", "phim 18+", "phim nguoi lon", "noi dung 18+",
+			"canh nong", "canh sex", "phim cap ba", "phim cap 3",
+		} {
+			if strings.Contains(desc, removeDiacritics(kw)) {
+				return true
+			}
 		}
 	}
 	return false
@@ -164,7 +176,9 @@ func hasAnimGenre(m Movie) bool {
 
 // anime / cartoon franchise keywords (ASCII-folded, matched as substrings).
 var animeKeywords = []string{
-	"anime", "jujutsu", "chu thuat", "chu-thuat", "naruto", "one piece", "one-piece",
+	"anime", "jujutsu", "chu thuat", "chu-thuat", "naruto",
+	// "one piece" alone also matches live-action; handled via live-action override above
+	"one piece", "one-piece", "dao hai tac",
 	"dragon ball", "dragonball", "demon slayer", "thanh guom", "thanh-guom", "kimetsu",
 	"bleach", "chainsaw", "attack on titan", "shingeki", "my hero academia",
 	"boku no hero", "spy x family", "spy-family", "tokyo ghoul", "death note",
@@ -246,6 +260,12 @@ func animationFormat(m Movie) string {
 	animGenre := hasAnimGenre(m)
 	animeKW := hasAnyKeyword(blob, animeKeywords)
 	cartoonKW := hasAnyKeyword(blob, cartoonKeywords)
+
+	// Explicit live-action branding wins over shared franchise names (One Piece LA vs anime).
+	if strings.Contains(blob, "live action") || strings.Contains(blob, "live-action") ||
+		strings.Contains(blob, "nguoi dong") || strings.Contains(blob, "người đóng") {
+		return "live"
+	}
 
 	// Strong anime signals: JP/KR + (genre or keyword), or explicit anime keyword.
 	if animeKW || (animGenre && (country == "nhat-ban" || country == "han-quoc")) {

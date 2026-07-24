@@ -137,19 +137,34 @@ func shortlistCandidates(target Movie, candidates []Movie, ctx UserContext) []Mo
 
 		blob := foldKey(cm.OriginName + " " + cm.Name + " " + cm.Slug)
 		isFranchise := false
-		if tBaseEng != "" && len(tBaseEng) >= 4 && strings.Contains(blob, tBaseEng) {
+		// Slug family is the safest franchise signal (bat-kha-chien-bai-*, nguoi-nhen-*).
+		if tSlugFam != "" && strings.HasPrefix(strings.ToLower(cm.Slug), tSlugFam) {
 			isFranchise = true
 		}
-		if !isFranchise && tBaseVi != "" && len(tBaseVi) >= 4 && strings.Contains(blob, tBaseVi) {
-			isFranchise = true
+		// Multi-token / distinctive bases may substring-match; single weak tokens
+		// like "invincible" must use exact series-base equality only (not catalog-wide contains).
+		if !isFranchise && tBaseEng != "" && len(tBaseEng) >= 4 {
+			if isLooseFranchiseToken(tBaseEng) {
+				if foldKey(seriesBase(cm.OriginName)) == tBaseEng || foldKey(seriesBase(cm.Name)) == tBaseEng {
+					isFranchise = true
+				}
+			} else if strings.Contains(blob, tBaseEng) {
+				isFranchise = true
+			}
 		}
-		if !isFranchise && tSlugFam != "" && strings.HasPrefix(strings.ToLower(cm.Slug), tSlugFam) {
-			isFranchise = true
+		if !isFranchise && tBaseVi != "" && len(tBaseVi) >= 4 {
+			if isLooseFranchiseToken(tBaseVi) {
+				if foldKey(seriesBase(cm.Name)) == tBaseVi || foldKey(seriesBase(cm.OriginName)) == tBaseVi {
+					isFranchise = true
+				}
+			} else if strings.Contains(blob, tBaseVi) {
+				isFranchise = true
+			}
 		}
-		// reverse: candidate's base appears in target (sequels with longer names)
+		// reverse: candidate's distinctive base appears in target
 		if !isFranchise {
 			cBase := foldKey(seriesBase(cm.OriginName))
-			if len(cBase) >= 5 {
+			if len(cBase) >= 5 && !isLooseFranchiseToken(cBase) {
 				tBlob := foldKey(target.OriginName + " " + target.Name)
 				if strings.Contains(tBlob, cBase) {
 					isFranchise = true
@@ -182,12 +197,55 @@ func shortlistCandidates(target Movie, candidates []Movie, ctx UserContext) []Mo
 		neighbors = neighbors[:maxNeighbors]
 	}
 
-	out := make([]Movie, 0, len(franchise)+len(neighbors))
+	out := make([]Movie, 0, len(franchise)+len(neighbors)+200)
 	out = append(out, franchise...)
 	out = append(out, neighbors...)
-	if len(out) < 60 {
-		// Degenerate metadata — fall back to full set rather than empty rails.
-		return candidates
+
+	// Never fall back to the full catalog (multi-second). If the shortlist is
+	// thin, pad with same-country or shared-genre peers (capped).
+	if len(out) < 80 {
+		pad := padCandidates(target, candidates, seen, 200-len(out))
+		out = append(out, pad...)
+	}
+	if len(out) == 0 {
+		// Absolute last resort: first N candidates (still bounded).
+		n := 150
+		if len(candidates) < n {
+			n = len(candidates)
+		}
+		return candidates[:n]
+	}
+	return out
+}
+
+func padCandidates(target Movie, candidates []Movie, seen map[string]bool, limit int) []Movie {
+	if limit <= 0 {
+		return nil
+	}
+	tCountry := NormCountry(target.Country)
+	tGenres := make(map[string]bool, len(target.Genres))
+	for _, g := range target.Genres {
+		tGenres[strings.ToLower(strings.TrimSpace(g))] = true
+	}
+	var out []Movie
+	for _, cm := range candidates {
+		if seen[cm.Slug] {
+			continue
+		}
+		overlap := 0
+		for _, g := range cm.Genres {
+			if tGenres[strings.ToLower(strings.TrimSpace(g))] {
+				overlap++
+			}
+		}
+		sameC := tCountry != "" && NormCountry(cm.Country) == tCountry
+		if overlap >= 1 || sameC {
+			seen[cm.Slug] = true
+			out = append(out, cm)
+			if len(out) >= limit {
+				break
+			}
+		}
 	}
 	return out
 }
@@ -196,6 +254,29 @@ func foldKey(s string) string {
 	s = strings.ToLower(removeDiacritics(s))
 	s = strings.NewReplacer("-", " ", "_", " ", ":", " ", ".", " ").Replace(s)
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// isLooseFranchiseToken is true for single-token bases that appear in many unrelated
+// titles (substring shortlist would pull half the catalog).
+func isLooseFranchiseToken(base string) bool {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return true
+	}
+	if strings.Contains(base, " ") {
+		// multi-token bases are usually distinctive enough for contains()
+		// unless they're known weak phrases
+		switch base {
+		case "spider man", "iron man", "captain america", "wonder woman":
+			return false // still ok via contains — many true peers
+		}
+		return false
+	}
+	// single token
+	if isWeakContainmentToken(base) {
+		return true
+	}
+	return len([]rune(base)) <= 6
 }
 
 func slugFamily(slug string) string {

@@ -166,8 +166,10 @@ func hasStrongSharedRoot(a, b Movie) bool {
 						return true
 					}
 				}
-				// single-token containment only for distinctive tokens (larva, bleach…)
-				if rootContains(ar, br) || rootContains(br, ar) {
+				// Containment only when the shorter root is a *prefix* of the longer
+				// (larva ⊂ larva island). Mid-string hits like "demon slayer" ⊂
+				// "immortal demon slayer" are different titles.
+				if rootContainsAsPrefix(ar, br) || rootContainsAsPrefix(br, ar) {
 					shorter := ar
 					if len(strings.Fields(br)) < len(strings.Fields(ar)) {
 						shorter = br
@@ -191,10 +193,33 @@ func isWeakContainmentToken(root string) bool {
 	switch normRoot(root) {
 	case "invincible", "spider", "batman", "superman", "hero", "king", "legend",
 		"dragon", "warrior", "master", "love", "war", "girl", "boy", "man", "woman",
-		"nhen", "nhện":
+		"nhen", "nhện", "demon slayer", "slayer":
 		return true
 	}
 	return false
+}
+
+// rootContainsAsPrefix is true when every token of the shorter root is the leading
+// token sequence of the longer root (not a mid-title subsequence).
+func rootContainsAsPrefix(a, b string) bool {
+	aT := strings.Fields(a)
+	bT := strings.Fields(b)
+	if len(aT) == 0 || len(bT) == 0 {
+		return false
+	}
+	shorter, longer := aT, bT
+	if len(aT) > len(bT) {
+		shorter, longer = bT, aT
+	}
+	if len(shorter) > len(longer) {
+		return false
+	}
+	for i, tok := range shorter {
+		if longer[i] != tok {
+			return false
+		}
+	}
+	return true
 }
 
 func seriesBase(name string) string {
