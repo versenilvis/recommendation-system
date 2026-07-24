@@ -145,57 +145,9 @@ func SeriesOrderLess(a, b Movie) bool {
 	return a.Name < b.Name
 }
 
-func sameAnimationProfile(a, b Movie) bool {
-	aAnim, aKnown := animationProfile(a)
-	bAnim, bKnown := animationProfile(b)
-	if !aKnown || !bKnown {
-		return false
-	}
-	return aAnim == bAnim
-}
-
-func animationFormat(m Movie) string {
-	isAnim := false
-	for _, g := range m.Genres {
-		gl := strings.ToLower(g)
-		if gl == "hoat-hinh" || gl == "anime" || gl == "hoathinh" {
-			isAnim = true
-			break
-		}
-	}
-	if !isAnim {
-		if len(m.Genres) == 0 {
-			return ""
-		}
-		return "live"
-	}
-	country := strings.ToLower(strings.TrimSpace(m.Country))
-	switch country {
-	case "nhật bản", "nhat-ban", "japan":
-		return "anime"
-	case "hàn quốc", "han-quoc", "korea":
-		return "anime"
-	default:
-		return "cartoon"
-	}
-}
-
-func animationProfile(m Movie) (animated bool, known bool) {
-	f := animationFormat(m)
-	switch f {
-	case "anime", "cartoon":
-		return true, true
-	case "live":
-		return false, true
-	default:
-		return false, false
-	}
-}
-
 func isSeriesMovie(m Movie) bool {
-	for _, g := range m.Genres {
-		gl := strings.ToLower(g)
-		if gl == "phim-bo" || gl == "tv-shows" {
+	for g := range genreSet(m.Genres) {
+		if g == "phim-bo" || g == "tv-shows" {
 			return true
 		}
 	}

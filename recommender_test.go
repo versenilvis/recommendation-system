@@ -450,3 +450,147 @@ func TestCommonPrefixNonGenericSingleToken(t *testing.T) {
 		t.Errorf("expected larva pendant and larva island to match as same series, got score: %f", score)
 	}
 }
+
+func TestNormCountryAliases(t *testing.T) {
+	cases := map[string]string{
+		"Nhật Bản": "nhat-ban",
+		"nhat-ban": "nhat-ban",
+		"japan":    "nhat-ban",
+		"Âu Mỹ":    "au-my",
+		"au-my":    "au-my",
+		"Hàn Quốc": "han-quoc",
+		"":         "",
+	}
+	for in, want := range cases {
+		if got := NormCountry(in); got != want {
+			t.Errorf("NormCountry(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestAnimeVsLiveActionHardPenalty(t *testing.T) {
+	// Real DB shape: JJK often missing hoat-hinh genre — must still detect anime via keywords + country.
+	jjk := Movie{
+		Name:       "Chú Thuật Hồi Chiến (Phần 2)",
+		OriginName: "Jujutsu Kaisen (Season 2)",
+		Slug:       "chu-thuat-hoi-chien-phan-2",
+		Genres:     []string{"hanh-dong", "phieu-luu", "khoa-hoc", "vien-tuong", "tam-ly"},
+		Country:    "nhat-ban",
+	}
+	jjkAltCountry := jjk
+	jjkAltCountry.Country = "Nhật Bản"
+
+	smallville := Movie{
+		Name:       "Thị Trấn Smallville (Phần 4)",
+		OriginName: "Smallville (Season 4)",
+		Slug:       "thi-tran-smallville-phan-4",
+		Genres:     []string{"khoa-hoc", "vien-tuong", "hanh-dong", "phieu-luu", "chinh-kich", "tam-ly", "series"},
+		Country:    "Âu Mỹ",
+	}
+	jjkS1 := Movie{
+		Name:       "Chú Thuật Hồi Chiến (Phần 1)",
+		OriginName: "Jujutsu Kaisen (Season 1)",
+		Slug:       "chu-thuat-hoi-chien-phan-1",
+		Genres:     []string{"hanh-dong", "phieu-luu", "khoa-hoc", "vien-tuong", "tam-ly"},
+		Country:    "Nhật Bản",
+	}
+
+	if animationFormat(jjk) != "anime" {
+		t.Fatalf("expected JJK to classify as anime, got %q", animationFormat(jjk))
+	}
+	if animationFormat(smallville) != "live" {
+		t.Fatalf("expected Smallville to classify as live, got %q", animationFormat(smallville))
+	}
+
+	simBad := ScoreSimilarContent(jjk, smallville)
+	if simBad > 0 {
+		t.Fatalf("expected JJK vs Smallville similar score <= 0, got %f", simBad)
+	}
+	simBad2 := ScoreSimilarContent(jjkAltCountry, smallville)
+	if simBad2 > 0 {
+		t.Fatalf("expected JJK(Nhật Bản) vs Smallville similar score <= 0, got %f", simBad2)
+	}
+	simGood := ScoreSimilarContent(jjk, jjkS1)
+	if simGood <= 0 {
+		t.Fatalf("expected JJK seasons to stay similar, got %f", simGood)
+	}
+	if ScoreSeriesMatch(jjk, jjkS1) < 10 {
+		t.Fatalf("expected JJK seasons in same_series")
+	}
+}
+
+func TestGuestYouMayLikeFiltersAdultAndRandomNoise(t *testing.T) {
+	spider := Movie{
+		Name:       "Người Nhện: Du Hành Vũ Trụ Nhện",
+		OriginName: "Spider-Man: Across the Spider-Verse",
+		Slug:       "nguoi-nhen-du-hanh-vu-tru-nhen",
+		Genres:     []string{"hanh-dong", "phieu-luu", "khoa-hoc", "vien-tuong"},
+		Country:    "au-my",
+	}
+	adult := Movie{
+		Name:    "Nhật Ký Cô Nàng Nghiện Sex",
+		Slug:    "nhat-ky-co-nang-nghien-sex",
+		Genres:  []string{"tinh-cam", "chinh-kich", "single"},
+		Country: "Tây Ban Nha",
+	}
+	adult2 := Movie{
+		Name:    "Người Đàn Bà Cuồng Dâm: Phần 1",
+		Slug:    "nguoi-dan-ba-cuong-dam-phan-1",
+		Genres:  []string{"chinh-kich", "single"},
+		Country: "Anh",
+	}
+	actionPeer := Movie{
+		Name:       "Người Nhện 2",
+		OriginName: "Spider-Man 2",
+		Slug:       "nguoi-nhen-2",
+		Genres:     []string{"hanh-dong", "phieu-luu", "khoa-hoc", "vien-tuong"},
+		Country:    "Âu Mỹ",
+	}
+	unrelated := Movie{
+		Name:    "Random Filler Show",
+		Slug:    "random-filler-show",
+		Genres:  []string{"chinh-kich"},
+		Country: "Pháp",
+	}
+
+	if !IsSensitiveContent(adult) || !IsSensitiveContent(adult2) {
+		t.Fatal("expected adult titles to be flagged via name keywords")
+	}
+
+	res := Recommend(spider, []Movie{adult, adult2, actionPeer, unrelated}, UserContext{})
+	for _, m := range res.YouMayLike {
+		if IsSensitiveContent(m) {
+			t.Fatalf("guest you_may_like must not include adult title %q", m.Name)
+		}
+		if m.Slug == unrelated.Slug {
+			t.Fatalf("guest you_may_like must not pick unrelated zero-signal filler")
+		}
+	}
+	// action peer may land in similar_content (franchise) rather than you_may_like
+	foundPeer := false
+	for _, m := range append(append([]Movie{}, res.SimilarContent...), res.YouMayLike...) {
+		if m.Slug == actionPeer.Slug {
+			foundPeer = true
+		}
+	}
+	if !foundPeer {
+		t.Fatal("expected related Spider-Man title in similar or you_may_like")
+	}
+}
+
+func TestSameCountryBoostDespiteDisplayNameMismatch(t *testing.T) {
+	a := Movie{
+		Name: "A", OriginName: "A", Genres: []string{"hanh-dong"}, Country: "nhat-ban",
+	}
+	b := Movie{
+		Name: "B", OriginName: "B", Genres: []string{"hanh-dong"}, Country: "Nhật Bản",
+	}
+	c := Movie{
+		Name: "C", OriginName: "C", Genres: []string{"hanh-dong"}, Country: "Âu Mỹ",
+	}
+	same := ScoreSimilarContent(a, b)
+	diff := ScoreSimilarContent(a, c)
+	if same <= diff {
+		t.Fatalf("expected same-country boost: same=%f diff=%f", same, diff)
+	}
+}

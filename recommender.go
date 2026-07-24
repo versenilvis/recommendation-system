@@ -11,7 +11,7 @@ func Recommend(target Movie, candidates []Movie, ctx UserContext) Recommendation
 			Movie:           cm,
 			SeriesScore:     ScoreSeriesMatch(target, cm),
 			SimilarScore:    ScoreSimilarContent(target, cm),
-			YouMayLikeScore: ScorePersonalised(cm, ctx.GenreScores, ctx.CoWatchedMovies, ctx.RecentGenres),
+			YouMayLikeScore: ScoreYouMayLike(target, cm, ctx),
 		}
 	}
 
@@ -54,6 +54,7 @@ func Recommend(target Movie, candidates []Movie, ctx UserContext) Recommendation
 		if len(similarContent) >= 12 {
 			break
 		}
+		// Require a positive similarity signal (filters pure noise + hard penalties).
 		if sm.SimilarScore > 0 && !seen[sm.Movie.Slug] {
 			seen[sm.Movie.Slug] = true
 			similarContent = append(similarContent, sm.Movie)
@@ -73,10 +74,19 @@ func Recommend(target Movie, candidates []Movie, ctx UserContext) Recommendation
 		if len(youMayLike) >= 8 {
 			break
 		}
-		if !seen[sm.Movie.Slug] && !ctx.WatchedMovies[sm.Movie.Slug] {
-			seen[sm.Movie.Slug] = true
-			youMayLike = append(youMayLike, sm.Movie)
+		if seen[sm.Movie.Slug] || ctx.WatchedMovies[sm.Movie.Slug] {
+			continue
 		}
+		// Guests previously filled this rail with score-0 random rows (incl. 18+).
+		// Require a meaningful positive score.
+		if sm.YouMayLikeScore < 1.0 {
+			continue
+		}
+		if IsSensitiveContent(sm.Movie) && !IsSensitiveContent(target) {
+			continue
+		}
+		seen[sm.Movie.Slug] = true
+		youMayLike = append(youMayLike, sm.Movie)
 	}
 
 	return Recommendations{

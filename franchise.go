@@ -159,7 +159,9 @@ func isTooGenericRoot(root string) bool {
 		return true
 	}
 	if meaningful == 1 {
-		if utf8.RuneCountInString(firstToken) <= 3 {
+		// Very short leftovers after stopword stripping are weak false positives
+		// (e.g. "người nhện" → "nhện"). Keep 5+ letter specific tokens like "larva".
+		if utf8.RuneCountInString(firstToken) <= 4 {
 			return true
 		}
 		switch firstToken {
@@ -172,7 +174,8 @@ func isTooGenericRoot(root string) bool {
 			"fear", "hate", "wish", "dream", "real", "fake", "true", "liar", "deal", "cash",
 			"money", "rich", "poor", "hard", "easy", "safe", "risk", "hell", "heaven", "devil",
 			"angel", "ghost", "witch", "beast", "magic", "power", "force", "truth", "secret",
-			"death", "sleep", "wake", "lost", "found", "black", "white", "green", "yellow":
+			"death", "sleep", "wake", "lost", "found", "black", "white", "green", "yellow",
+			"spider", "batman", "superman", "nhen", "nhện":
 			return true
 		}
 		return false
