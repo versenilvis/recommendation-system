@@ -22,6 +22,14 @@ func ScoreSeriesMatch(target, cm Movie) float64 {
 		matchLevel = 0
 	}
 
+	// Amazon Invincible seasons/specials must not absorb unrelated "Invincible *" titles
+	// (e.g. Chinese films with origin_name exactly "Invincible").
+	if isAmazonInvincibleShow(target) != isAmazonInvincibleShow(cm) {
+		if isAmazonInvincibleShow(target) || isAmazonInvincibleShow(cm) {
+			matchLevel = 0
+		}
+	}
+
 	if matchLevel == 0 && !formatsConflict(target, cm) {
 		crewMatch := directorOverlap >= 1 || actorOverlap >= 2
 		exactBase := sharedExactSeriesBase(target, cm)

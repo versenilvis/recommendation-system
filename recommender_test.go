@@ -633,9 +633,18 @@ func TestInvincibleSeasonsNotConfusedWithMedicFatty(t *testing.T) {
 		t.Fatalf("atom eve special must be same_series, got %f", ScoreSeriesMatch(inv4, atom))
 	}
 
-	res := Recommend(inv4, []Movie{inv1, medic, fatty, atom}, UserContext{})
+	chineseInv := Movie{
+		Name: "Trần Tường 6h30: Người Mẹ Quyền Anh", OriginName: "Invincible",
+		Slug: "tran-tuong-6h30-nguoi-me-quyen-anh",
+		Genres: []string{"hanh-dong", "gia-dinh"}, Country: "trung-quoc",
+	}
+	if ScoreSeriesMatch(inv4, chineseInv) != 0 {
+		t.Fatalf("chinese Invincible film must not be same_series, got %f", ScoreSeriesMatch(inv4, chineseInv))
+	}
+
+	res := Recommend(inv4, []Movie{inv1, medic, fatty, atom, chineseInv}, UserContext{})
 	for _, m := range res.SameSeries {
-		if m.Slug == medic.Slug || m.Slug == fatty.Slug {
+		if m.Slug == medic.Slug || m.Slug == fatty.Slug || m.Slug == chineseInv.Slug {
 			t.Fatalf("same_series leaked unrelated title %q", m.Name)
 		}
 	}

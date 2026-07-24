@@ -188,31 +188,43 @@ var cartoonKeywords = []string{
 
 // isAmazonInvincibleShow detects the animated Invincible series/specials even when
 // the catalog omits hoat-hinh (common for bat-kha-chien-bai seasons).
+// Bare origin "Invincible" alone is ambiguous (many unrelated films use it) — require
+// season/special markers, the Vietnamese slug family, or Atom Eve branding.
 func isAmazonInvincibleShow(m Movie) bool {
 	blob := contentBlob(m)
 	// Reject unrelated Chinese/other titles that only share the word "invincible".
 	if strings.Contains(blob, "medic") || strings.Contains(blob, "fatty") ||
 		strings.Contains(blob, "dragon") || strings.Contains(blob, "commission") ||
 		strings.Contains(blob, "constable") || strings.Contains(blob, "swordsman") ||
-		strings.Contains(blob, "iron man") || strings.Contains(blob, "wenger") {
+		strings.Contains(blob, "iron man") || strings.Contains(blob, "wenger") ||
+		strings.Contains(blob, "quyen anh") || strings.Contains(blob, "quyền anh") {
 		return false
 	}
 	slug := strings.ToLower(m.Slug)
 	if strings.HasPrefix(slug, "bat-kha-chien-bai") {
 		return true
 	}
-	if strings.Contains(slug, "invincible") && (strings.Contains(slug, "atom-eve") ||
-		strings.Contains(slug, "atom_eve") || strings.Contains(blob, "atom eve")) {
-		return true
+	if strings.Contains(blob, "atom eve") || strings.Contains(slug, "atom-eve") {
+		if strings.Contains(blob, "invincible") || strings.Contains(blob, "bat kha chien bai") {
+			return true
+		}
 	}
-	// Origin "Invincible (Season N)" / "Invincible: Atom Eve"
+
 	ob := strings.ToLower(removeDiacritics(m.OriginName))
 	if strings.HasPrefix(ob, "invincible") {
 		rest := strings.TrimSpace(strings.TrimPrefix(ob, "invincible"))
-		if rest == "" || strings.HasPrefix(rest, "(") || strings.HasPrefix(rest, ":") ||
-			strings.HasPrefix(rest, " season") || strings.HasPrefix(rest, " -") {
+		// Require explicit season / special — NOT bare "Invincible".
+		if strings.Contains(rest, "season") || strings.Contains(rest, "atom") ||
+			strings.Contains(rest, "presenting") || strings.Contains(rest, "eve") {
 			return true
 		}
+	}
+
+	name := strings.ToLower(removeDiacritics(m.Name))
+	if strings.Contains(name, "bat kha chien bai") &&
+		(strings.Contains(name, "phan") || strings.Contains(name, "atom") ||
+			strings.Contains(name, "tap dac biet")) {
+		return true
 	}
 	return false
 }
