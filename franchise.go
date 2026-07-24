@@ -192,8 +192,13 @@ func hasStrongSharedRoot(a, b Movie) bool {
 func isWeakContainmentToken(root string) bool {
 	switch normRoot(root) {
 	case "invincible", "spider", "batman", "superman", "hero", "king", "legend",
-		"dragon", "warrior", "master", "love", "war", "girl", "boy", "man", "woman",
-		"nhen", "nhện", "demon slayer", "slayer":
+		"legends", "dragon", "warrior", "master", "love", "war", "girl", "boy", "man", "woman",
+		"nhen", "nhện", "demon slayer", "slayer",
+		// Media-generic subtitle words (Stranger Things: Tales… vs Trollhunters: Tales…)
+		"tales", "tale", "story", "stories", "chronicle", "chronicles",
+		"saga", "adventure", "adventures", "quest", "return", "returns",
+		"origins", "origin", "beginning", "legacy", "universe", "world",
+		"truyen", "truyện", "chuyen", "chuyện", "ky", "kỳ":
 		return true
 	}
 	return false
@@ -229,6 +234,17 @@ func seriesBase(name string) string {
 	}
 	if idx := strings.Index(s, ":"); idx > 2 {
 		s = s[:idx]
+	}
+	// Strip format branding before season/part markers so
+	// "ONE PIECE (Live Action) (Season 2)" → "one piece".
+	for _, marker := range []string{
+		" (live action)", " live action", "-live-action", " live-action",
+		" (animated)", " animated",
+		" (anime)",
+	} {
+		if idx := strings.Index(s, marker); idx > 0 {
+			s = s[:idx]
+		}
 	}
 	for _, marker := range []string{
 		" phần ", " - phần ", "(phần ",
@@ -306,6 +322,12 @@ func isRootStopword(t string) bool {
 	if _, err := strconv.Atoi(t); err == nil {
 		return true
 	}
+	// year fragments like '85
+	if strings.HasPrefix(t, "'") {
+		if _, err := strconv.Atoi(strings.TrimPrefix(t, "'")); err == nil {
+			return true
+		}
+	}
 	switch t {
 	case "the", "a", "an", "of", "and", "or",
 		"phim", "movie", "film",
@@ -322,7 +344,10 @@ func isRootStopword(t string) bool {
 		"tai", "tại", "trong", "ngoai", "ngoài", "tren", "trên",
 		"duoi", "dưới", "den", "đến", "di", "đi", "ve", "về",
 		"nhu", "như", "de", "để", "boi", "bởi", "tu", "từ",
-		"o", "ở":
+		"o", "ở",
+		// generic media subtitle words — never franchise identity alone
+		"tales", "tale", "story", "stories", "saga", "quest",
+		"live", "action", "animated", "anime":
 		return true
 	}
 	return false

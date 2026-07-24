@@ -188,6 +188,60 @@ func TestCorpusGuestRailsExcludeAdult(t *testing.T) {
 	assertNoSensitive(t, res.YouMayLike)
 }
 
+func TestCorpusStrangerThingsTalesNotTrollhunters(t *testing.T) {
+	st := Movie{
+		Slug: "cau-be-mat-tich-chuyen-nam-85", Name: "Cậu Bé Mất Tích: Chuyện Năm 85",
+		OriginName: "Stranger Things: Tales From '85",
+		Genres:     []string{"khoa-hoc", "vien-tuong", "bi-an", "hanh-dong", "phieu-luu", "tam-ly", "hoathinh"},
+		Country:    "Âu Mỹ",
+	}
+	troll := Movie{
+		Slug: "tho-san-yeu-tinh-truyen-thuyet-arcadia-phan-1",
+		Name: "Thợ Săn Yêu Tinh: Truyền Thuyết Arcadia (Phần 1)",
+		OriginName: "Trollhunters: Tales of Arcadia (Season 1)",
+		Genres:     []string{"hanh-dong", "phieu-luu", "vien-tuong", "hoat-hinh"},
+		Country:    "Âu Mỹ",
+	}
+	stDoc := Movie{
+		Slug: "cuoc-phieu-luu-cuoi-hau-truong-cau-be-mat-tich-5",
+		Name: "Cuộc phiêu lưu cuối: Hậu trường Cậu bé mất tích 5",
+		OriginName: "One Last Adventure: The Making of Stranger Things 5",
+		Genres:     []string{"tai-lieu", "hanh-dong", "bi-an"},
+		Country:    "Âu Mỹ",
+	}
+	if ScoreSeriesMatch(st, troll) != 0 {
+		t.Fatalf("Trollhunters must not be same_series for Tales From '85, score=%f", ScoreSeriesMatch(st, troll))
+	}
+	res := Recommend(st, []Movie{troll, stDoc, find(corpusPool(), "nhat-ky-co-nang-nghien-sex")}, UserContext{})
+	if hasSlug(res.SameSeries, troll.Slug) {
+		t.Fatalf("same_series leaked Trollhunters: %v", slugs(res.SameSeries))
+	}
+}
+
+func TestCorpusOnePieceLiveActionFranchisePriority(t *testing.T) {
+	pool := corpusPool()
+	// enrich pool with Smallville noise that previously outranked OP peers
+	pool = append(pool, Movie{
+		Slug: "thi-tran-smallville-phan-2", Name: "Thị Trấn Smallville (Phần 2)",
+		OriginName: "Smallville (Season 2)",
+		Genres:     []string{"khoa-hoc", "vien-tuong", "hanh-dong", "phieu-luu", "chinh-kich", "tam-ly", "series"},
+		Country:    "Âu Mỹ",
+	})
+	target := find(pool, "dao-hai-tac-live-action-phan-2")
+	opAnime := find(pool, "dao-hai-tac-5-loi-nguyen-thanh-kiem")
+	small := find(pool, "thi-tran-smallville-phan-4")
+	opScore := ScoreSimilarContent(target, opAnime)
+	smallScore := ScoreSimilarContent(target, small)
+	if opScore <= smallScore {
+		t.Fatalf("One Piece franchise peer (%f) must outrank Smallville (%f)", opScore, smallScore)
+	}
+	res := Recommend(target, without(pool, target.Slug), UserContext{})
+	// franchise peer should appear in similar (not same_series — format differs)
+	if !hasSlug(res.SimilarContent, opAnime.Slug) && !hasAnySlugPrefix(res.SimilarContent, "dao-hai-tac", "one-piece") {
+		t.Fatalf("similar_content missing One Piece franchise peers, got %v", slugs(res.SimilarContent))
+	}
+}
+
 func TestCorpusShortlistKeepsFranchisePeers(t *testing.T) {
 	// Large filler pool + sparse invincible peers must still surface seasons.
 	target := find(corpusPool(), "bat-kha-chien-bai-phan-4")

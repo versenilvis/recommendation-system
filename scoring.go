@@ -1,5 +1,7 @@
 package recommender
 
+import "strings"
+
 func ScoreSeriesMatch(target, cm Movie) float64 {
 	actorOverlap := intersectionCount(cm.Actors, target.Actors)
 	directorOverlap := intersectionCount(cm.Directors, target.Directors)
@@ -89,12 +91,18 @@ func ScoreSimilarContent(target, cm Movie) float64 {
 	directorOverlap := intersectionCount(cm.Directors, target.Directors)
 	engMatch, viMatch, franchiseLv := getFranchiseMatchLevels(target, cm)
 
-	tBase := normRoot(seriesBase(target.OriginName))
-	cBase := normRoot(seriesBase(cm.OriginName))
+	tBase := commercialSeriesBase(target.OriginName)
+	cBase := commercialSeriesBase(cm.OriginName)
 	sharedCommercialBase := tBase != "" && cBase != "" && tBase == cBase
-	tVi := normRoot(seriesBase(target.Name))
-	cVi := normRoot(seriesBase(cm.Name))
-	if tVi != "" && cVi != "" && tVi == cVi {
+	// Prefix commercial match: "one piece" vs "one piece curse of the sacred sword"
+	if !sharedCommercialBase && tBase != "" && cBase != "" {
+		if commercialBaseRelated(tBase, cBase) {
+			sharedCommercialBase = true
+		}
+	}
+	tVi := commercialSeriesBase(target.Name)
+	cVi := commercialSeriesBase(cm.Name)
+	if tVi != "" && cVi != "" && (tVi == cVi || commercialBaseRelated(tVi, cVi)) {
 		sharedCommercialBase = true
 	}
 
@@ -116,14 +124,14 @@ func ScoreSimilarContent(target, cm Movie) float64 {
 		score += 3.0
 	}
 
-	// Shared commercial series base (e.g. spider-man, invincible seasons) should
-	// dominate "Nội dung tương tự" over merely same-genre cartoons.
+	// Shared commercial series base (e.g. spider-man, one piece LA↔anime) should
+	// dominate "Nội dung tương tự" over merely same-genre live-action series.
 	compatibleSeries := seriesBasesCompatible(target, cm)
 	if sharedCommercialBase || compatibleSeries {
 		if franchiseLv == 0 {
-			score += 14.0
+			score += 22.0
 		} else {
-			score += 6.0
+			score += 10.0
 		}
 	}
 
@@ -133,7 +141,8 @@ func ScoreSimilarContent(target, cm Movie) float64 {
 			score -= 15.0
 		} else {
 			// Soft demotion for live remakes / alternate formats of the same franchise.
-			score -= 4.0
+			// Keep well below the commercial boost so franchise peers still rank first.
+			score -= 2.0
 		}
 	} else if sameAnimationProfile(target, cm) {
 		tFmt := animationFormat(target)
@@ -232,4 +241,45 @@ func getFranchiseMatchLevels(target, cm Movie) (engMatch, viMatch, franchiseLv i
 		franchiseLv = viMatch
 	}
 	return
+}
+
+// commercialSeriesBase is seriesBase folded for cross-format franchise matching
+// (live-action vs anime One Piece, etc.).
+func commercialSeriesBase(name string) string {
+	return normRoot(seriesBase(name))
+}
+
+// commercialBaseRelated is true when one commercial base is a distinctive prefix
+// of the other (one piece ⊂ one piece curse sacred sword) without weak tokens.
+func commercialBaseRelated(a, b string) bool {
+	if a == "" || b == "" || a == b {
+		return a != "" && a == b
+	}
+	aT, bT := strings.Fields(a), strings.Fields(b)
+	if len(aT) == 0 || len(bT) == 0 {
+		return false
+	}
+	shorter, longer := aT, bT
+	if len(aT) > len(bT) {
+		shorter, longer = bT, aT
+	}
+	// Require at least 2 tokens for prefix relation (avoid "one" matching everything)
+	// OR a single distinctive token of length >= 8.
+	if len(shorter) == 1 {
+		if isWeakContainmentToken(shorter[0]) || isTooGenericRoot(shorter[0]) {
+			return false
+		}
+		if len([]rune(shorter[0])) < 8 {
+			return false
+		}
+	}
+	if !isTokenPrefix(shorter, longer) {
+		return false
+	}
+	// Reject if the shared head is only weak media words
+	head := strings.Join(shorter, " ")
+	if isTooGenericRoot(head) || isWeakContainmentToken(head) {
+		return false
+	}
+	return true
 }
