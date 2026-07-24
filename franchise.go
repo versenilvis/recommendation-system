@@ -34,6 +34,169 @@ func SeriesBase(name string) string {
 	return seriesBase(name)
 }
 
+// franchiseExtensionTokens are allowed extra tokens when one series base is a
+// prefix of another (e.g. "larva" ↔ "larva island"). Arbitrary second titles
+// like "invincible medic" / "invincible fatty" must NOT match.
+var franchiseExtensionTokens = map[string]bool{
+	"island": true, "movie": true, "film": true, "zero": true, "ova": true,
+	"special": true, "returns": true, "begins": true, "legend": true,
+	"chronicles": true, "tales": true, "story": true, "shippuden": true,
+	"kai": true, "z": true, "gt": true, "super": true, "brotherhood": true,
+	"the": true, "of": true, "and": true, "vs": true, "versus": true,
+	"part": true, "chapter": true, "book": true, "final": true, "ultimate": true,
+	"complete": true, "collection": true, "remastered": true, "edition": true,
+	"black": true, "white": true, // e.g. sword art online progressive
+	"atom": true, "eve": true, "presenting": true, // Invincible specials
+}
+
+// seriesBasesCompatible reports whether two titles share a real series identity
+// (exact base or base + franchise extension), not merely a shared adjective/token.
+func seriesBasesCompatible(a, b Movie) bool {
+	candidates := [][2]string{
+		{a.OriginName, b.OriginName},
+		{a.Name, b.Name},
+		{a.OriginName, b.Name},
+		{a.Name, b.OriginName},
+		{slugBase(a.Slug), slugBase(b.Slug)},
+	}
+	for _, pair := range candidates {
+		if basesCompatible(pair[0], pair[1]) {
+			return true
+		}
+	}
+	return false
+}
+
+func basesCompatible(a, b string) bool {
+	a = normRoot(seriesBase(a))
+	b = normRoot(seriesBase(b))
+	if a == "" || b == "" {
+		return false
+	}
+	// Exact series-base equality is always a real match (incl. "spider man", "invincible"),
+	// even when those tokens are treated as too-generic for fuzzy root containment.
+	if a == b {
+		return true
+	}
+	aT := strings.Fields(a)
+	bT := strings.Fields(b)
+	if len(aT) == 0 || len(bT) == 0 {
+		return false
+	}
+	if isTokenPrefix(aT, bT) {
+		return extensionTokensOK(bT[len(aT):]) && !isTooGenericRoot(strings.Join(aT, " "))
+	}
+	if isTokenPrefix(bT, aT) {
+		return extensionTokensOK(aT[len(bT):]) && !isTooGenericRoot(strings.Join(bT, " "))
+	}
+	return false
+}
+
+func isTokenPrefix(prefix, full []string) bool {
+	if len(prefix) == 0 || len(prefix) > len(full) {
+		return false
+	}
+	for i, t := range prefix {
+		if full[i] != t {
+			return false
+		}
+	}
+	return true
+}
+
+func extensionTokensOK(extra []string) bool {
+	if len(extra) == 0 {
+		return true
+	}
+	for _, t := range extra {
+		if franchiseExtensionTokens[t] {
+			continue
+		}
+		// pure numbers already stripped by seriesBase; reject unknown words
+		return false
+	}
+	return true
+}
+
+// multiContinuityFranchise bases have many unrelated reboots; same_series needs cast/crew.
+func isMultiContinuityFranchise(base string) bool {
+	switch normRoot(base) {
+	case "spider man", "spiderman", "batman", "superman", "iron man", "ironman",
+		"avengers", "x men", "xmen", "captain america", "wonder woman":
+		return true
+	}
+	return false
+}
+
+func sharedExactSeriesBase(a, b Movie) string {
+	pairs := [][2]string{
+		{normRoot(seriesBase(a.OriginName)), normRoot(seriesBase(b.OriginName))},
+		{normRoot(seriesBase(a.Name)), normRoot(seriesBase(b.Name))},
+	}
+	for _, p := range pairs {
+		if p[0] != "" && p[0] == p[1] {
+			return p[0]
+		}
+	}
+	return ""
+}
+
+// hasStrongSharedRoot keeps true spin-offs (larva ↔ larva island) while rejecting
+// weak single-token containment (invincible ⊂ invincible medic).
+func hasStrongSharedRoot(a, b Movie) bool {
+	check := func(aRoots, bRoots []string) bool {
+		for _, ar := range aRoots {
+			for _, br := range bRoots {
+				if ar == "" || br == "" {
+					continue
+				}
+				if ar == br {
+					if !isTooGenericRoot(ar) && !isWeakContainmentToken(ar) {
+						return true
+					}
+					continue
+				}
+				// Shared prefix: multi-token always; single distinctive token (larva) ok.
+				if prefix := rootCommonPrefix(ar, br); prefix != "" {
+					n := len(strings.Fields(prefix))
+					if n >= 2 && !isTooGenericRoot(prefix) {
+						return true
+					}
+					if n == 1 && !isTooGenericRoot(prefix) && !isWeakContainmentToken(prefix) {
+						return true
+					}
+				}
+				// single-token containment only for distinctive tokens (larva, bleach…)
+				if rootContains(ar, br) || rootContains(br, ar) {
+					shorter := ar
+					if len(strings.Fields(br)) < len(strings.Fields(ar)) {
+						shorter = br
+					}
+					toks := strings.Fields(shorter)
+					if len(toks) == 1 && !isTooGenericRoot(shorter) && !isWeakContainmentToken(shorter) {
+						return true
+					}
+					if len(toks) >= 2 && !isTooGenericRoot(shorter) {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	return check(franchiseRoots(a), franchiseRoots(b)) || check(vietnameseRoots(a), vietnameseRoots(b))
+}
+
+func isWeakContainmentToken(root string) bool {
+	switch normRoot(root) {
+	case "invincible", "spider", "batman", "superman", "hero", "king", "legend",
+		"dragon", "warrior", "master", "love", "war", "girl", "boy", "man", "woman",
+		"nhen", "nhện":
+		return true
+	}
+	return false
+}
+
 func seriesBase(name string) string {
 	s := strings.ToLower(strings.TrimSpace(name))
 	if s == "" {

@@ -6,23 +6,43 @@ func ScoreSeriesMatch(target, cm Movie) float64 {
 
 	engMatch, viMatch, matchLevel := getFranchiseMatchLevels(target, cm)
 
-	// Weak franchise signal without shared cast/crew is usually a false positive
-	// (e.g. generic single-token leftovers).
+	// Weak franchise signal without shared cast/crew is usually a false positive.
 	if matchLevel == 1 && actorOverlap == 0 && directorOverlap == 0 {
 		matchLevel = 0
 	}
 
-	// Animated vs live-action must never share same_series unless hard crew proof
-	// of a true shared production (extremely rare — keep out by default).
+	// Root containment alone is too loose ("Invincible" ⊂ "Invincible Medic").
+	// Keep only series-base-compatible pairs or strong distinctive roots (larva…).
+	if matchLevel > 0 && !seriesBasesCompatible(target, cm) && !hasStrongSharedRoot(target, cm) {
+		matchLevel = 0
+	}
+
+	// Animated vs live-action never share same_series.
 	if formatsConflict(target, cm) {
 		matchLevel = 0
 	}
 
-	if matchLevel == 0 {
-		noRoots := len(franchiseRoots(target)) == 0 && len(franchiseRoots(cm)) == 0
+	if matchLevel == 0 && !formatsConflict(target, cm) {
 		crewMatch := directorOverlap >= 1 || actorOverlap >= 2
-		if noRoots && crewMatch && !formatsConflict(target, cm) {
-			matchLevel = 1
+		exactBase := sharedExactSeriesBase(target, cm)
+
+		// Multi-continuity franchises (Spider-Man reboots): cast/crew required.
+		if exactBase != "" && isMultiContinuityFranchise(exactBase) {
+			if crewMatch {
+				matchLevel = 2
+			}
+		} else if seriesBasesCompatible(target, cm) {
+			// True seasons / extensions (Invincible S1–S4, Larva Island).
+			if exactBase != "" {
+				matchLevel = 2
+			} else {
+				matchLevel = 2
+			}
+		} else if crewMatch {
+			noRoots := len(franchiseRoots(target)) == 0 && len(franchiseRoots(cm)) == 0
+			if noRoots {
+				matchLevel = 1
+			}
 		}
 	}
 
@@ -88,19 +108,24 @@ func ScoreSimilarContent(target, cm Movie) float64 {
 		score += 3.0
 	}
 
-	// Shared commercial series base (e.g. spider-man) even when roots are "generic"
-	// for same_series purposes — still a real franchise signal for similar_content.
-	if sharedCommercialBase && franchiseLv == 0 {
-		score += 5.0
+	// Shared commercial series base (e.g. spider-man, invincible seasons) should
+	// dominate "Nội dung tương tự" over merely same-genre cartoons.
+	compatibleSeries := seriesBasesCompatible(target, cm)
+	if sharedCommercialBase || compatibleSeries {
+		if franchiseLv == 0 {
+			score += 14.0
+		} else {
+			score += 6.0
+		}
 	}
 
 	// Hard separate anime/cartoon from live-action unless same franchise / series name.
 	if formatsConflict(target, cm) {
-		if franchiseLv == 0 && !sharedCommercialBase {
+		if franchiseLv == 0 && !sharedCommercialBase && !compatibleSeries {
 			score -= 15.0
 		} else {
 			// Soft demotion for live remakes / alternate formats of the same franchise.
-			score -= 6.0
+			score -= 4.0
 		}
 	} else if sameAnimationProfile(target, cm) {
 		tFmt := animationFormat(target)

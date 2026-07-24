@@ -182,7 +182,39 @@ var cartoonKeywords = []string{
 	"illumination", "cartoon", "hoat hinh", "hoat-hinh", "animated",
 	"despicable", "minions", "frozen", "zootopia", "encanto", "moana",
 	"toy story", "incredibles", "kung fu panda", "how to train your dragon",
-	"larva", "au trung",
+	"larva", "au trung", "arcane", "avatar the last", "legend of korra",
+	"my adventures with superman", "x-men 97", "x men 97",
+}
+
+// isAmazonInvincibleShow detects the animated Invincible series/specials even when
+// the catalog omits hoat-hinh (common for bat-kha-chien-bai seasons).
+func isAmazonInvincibleShow(m Movie) bool {
+	blob := contentBlob(m)
+	// Reject unrelated Chinese/other titles that only share the word "invincible".
+	if strings.Contains(blob, "medic") || strings.Contains(blob, "fatty") ||
+		strings.Contains(blob, "dragon") || strings.Contains(blob, "commission") ||
+		strings.Contains(blob, "constable") || strings.Contains(blob, "swordsman") ||
+		strings.Contains(blob, "iron man") || strings.Contains(blob, "wenger") {
+		return false
+	}
+	slug := strings.ToLower(m.Slug)
+	if strings.HasPrefix(slug, "bat-kha-chien-bai") {
+		return true
+	}
+	if strings.Contains(slug, "invincible") && (strings.Contains(slug, "atom-eve") ||
+		strings.Contains(slug, "atom_eve") || strings.Contains(blob, "atom eve")) {
+		return true
+	}
+	// Origin "Invincible (Season N)" / "Invincible: Atom Eve"
+	ob := strings.ToLower(removeDiacritics(m.OriginName))
+	if strings.HasPrefix(ob, "invincible") {
+		rest := strings.TrimSpace(strings.TrimPrefix(ob, "invincible"))
+		if rest == "" || strings.HasPrefix(rest, "(") || strings.HasPrefix(rest, ":") ||
+			strings.HasPrefix(rest, " season") || strings.HasPrefix(rest, " -") {
+			return true
+		}
+	}
+	return false
 }
 
 func hasAnyKeyword(blob string, kws []string) bool {
@@ -218,6 +250,10 @@ func animationFormat(m Movie) string {
 	// Keyword "jujutsu" etc. even if country missing
 	if animeKW {
 		return "anime"
+	}
+
+	if isAmazonInvincibleShow(m) {
+		return "cartoon"
 	}
 
 	if animGenre || cartoonKW {

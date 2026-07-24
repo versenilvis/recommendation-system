@@ -594,3 +594,85 @@ func TestSameCountryBoostDespiteDisplayNameMismatch(t *testing.T) {
 		t.Fatalf("expected same-country boost: same=%f diff=%f", same, diff)
 	}
 }
+
+func TestInvincibleSeasonsNotConfusedWithMedicFatty(t *testing.T) {
+	inv4 := Movie{
+		Name: "Bất Khả Chiến Bại (Phần 4)", OriginName: "Invincible (Season 4)",
+		Slug: "bat-kha-chien-bai-phan-4",
+		Genres: []string{"chinh-kich", "phieu-luu", "vien-tuong", "tam-ly"}, Country: "canada",
+	}
+	inv1 := Movie{
+		Name: "Bất Khả Chiến Bại (Phần 1)", OriginName: "Invincible (Season 1)",
+		Slug: "bat-kha-chien-bai-phan-1",
+		Genres: []string{"chinh-kich", "phieu-luu", "vien-tuong", "tam-ly"}, Country: "canada",
+	}
+	medic := Movie{
+		Name: "Tình Nghĩa Giang Hồ", OriginName: "Invincible Medic",
+		Slug: "tinh-nghia-giang-ho", Genres: []string{"chinh-kich"}, Country: "trung-quoc",
+	}
+	fatty := Movie{
+		Name: "Béo bất khả chiến bại", OriginName: "Invincible Fatty",
+		Slug: "beo-bat-kha-chien-bai", Genres: []string{"hai-huoc"}, Country: "trung-quoc",
+	}
+	atom := Movie{
+		Name: "Invincible: Nguồn gốc Atom Eve", OriginName: "Invincible: Presenting Atom Eve",
+		Slug: "invincible-nguon-goc-atom-eve",
+		Genres: []string{"chinh-kich", "hanh-dong", "hoathinh"}, Country: "Âu Mỹ",
+	}
+
+	if ScoreSeriesMatch(inv4, medic) != 0 {
+		t.Fatalf("medic must not be same_series, got %f", ScoreSeriesMatch(inv4, medic))
+	}
+	if ScoreSeriesMatch(inv4, fatty) != 0 {
+		t.Fatalf("fatty must not be same_series, got %f", ScoreSeriesMatch(inv4, fatty))
+	}
+	if ScoreSeriesMatch(inv4, inv1) < 10 {
+		t.Fatalf("season 1 must be same_series, got %f", ScoreSeriesMatch(inv4, inv1))
+	}
+	if ScoreSeriesMatch(inv4, atom) < 10 {
+		t.Fatalf("atom eve special must be same_series, got %f", ScoreSeriesMatch(inv4, atom))
+	}
+
+	res := Recommend(inv4, []Movie{inv1, medic, fatty, atom}, UserContext{})
+	for _, m := range res.SameSeries {
+		if m.Slug == medic.Slug || m.Slug == fatty.Slug {
+			t.Fatalf("same_series leaked unrelated title %q", m.Name)
+		}
+	}
+}
+
+func TestSpiderManLiveActionRanksInSimilarContent(t *testing.T) {
+	target := Movie{
+		Name: "Người Nhện: Du Hành Vũ Trụ Nhện", OriginName: "Spider-Man: Across The Spider-Verse",
+		Slug: "nguoi-nhen-du-hanh-vu-tru-nhen",
+		Genres: []string{"hanh-dong", "phieu-luu", "khoa-hoc", "vien-tuong", "tam-ly", "hoathinh"},
+		Country: "au-my",
+	}
+	live := Movie{
+		Name: "Người Nhện 2", OriginName: "Spider-Man 2", Slug: "nguoi-nhen-2",
+		Genres: []string{"hanh-dong", "phieu-luu", "khoa-hoc", "vien-tuong", "tam-ly"},
+		Country: "Âu Mỹ",
+	}
+	korra := Movie{
+		Name: "Huyền Thoại Korra (Phần 1)", OriginName: "The Legend Of Korra (Season 1)",
+		Slug: "huyen-thoai-korra-phan-1",
+		Genres: []string{"hanh-dong", "phieu-luu", "khoa-hoc", "vien-tuong", "tam-ly", "hoat-hinh"},
+		Country: "Âu Mỹ",
+	}
+	liveScore := ScoreSimilarContent(target, live)
+	korraScore := ScoreSimilarContent(target, korra)
+	if liveScore <= korraScore {
+		t.Fatalf("expected Spider-Man 2 (%f) to outrank Korra (%f) in similar_content", liveScore, korraScore)
+	}
+	res := Recommend(target, []Movie{live, korra}, UserContext{})
+	// Into Spider-Verse path not in candidates; live should appear in similar (not same_series — format differs)
+	found := false
+	for _, m := range res.SimilarContent {
+		if m.Slug == live.Slug {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected Spider-Man 2 in similar_content, got %#v", res.SimilarContent)
+	}
+}
