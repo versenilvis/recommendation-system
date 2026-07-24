@@ -190,7 +190,21 @@ func hasStrongSharedRoot(a, b Movie) bool {
 }
 
 func isWeakContainmentToken(root string) bool {
-	switch normRoot(root) {
+	// Check raw lowercased form first — normRoot strips stopwords like "tales",
+	// which would hide the weak-token classification we need for subtitle collisions.
+	raw := strings.ToLower(strings.TrimSpace(root))
+	raw = strings.Join(strings.Fields(raw), " ")
+	if isWeakFranchiseTokenKey(raw) {
+		return true
+	}
+	if n := normRoot(root); n != "" && n != raw && isWeakFranchiseTokenKey(n) {
+		return true
+	}
+	return false
+}
+
+func isWeakFranchiseTokenKey(s string) bool {
+	switch s {
 	case "invincible", "spider", "batman", "superman", "hero", "king", "legend",
 		"legends", "dragon", "warrior", "master", "love", "war", "girl", "boy", "man", "woman",
 		"nhen", "nhện", "demon slayer", "slayer",
